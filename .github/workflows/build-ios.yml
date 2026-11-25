@@ -28,8 +28,13 @@ jobs:
           GAME_URL: ${{ secrets.GAME_URL }}
         run: |
           set -e
-          curl -L --retry 8 --retry-delay 5 -C - -o botw.xci "$GAME_URL/botw.xci"
-          curl -L --retry 8 --retry-delay 5    -o fonts.zip  "$GAME_URL/shared-fonts.zip"
+          # 防僵尸+断点续传：30 秒无数据就掐掉重连，所有错误都可重试，每次重试从断点继续
+          curl -L --retry 30 --retry-all-errors --retry-delay 5 -C - \
+            --speed-time 30 --speed-limit 10000 --connect-timeout 20 \
+            -o botw.xci "$GAME_URL/botw.xci"
+          curl -L --retry 30 --retry-all-errors --retry-delay 5 -C - \
+            --speed-time 30 --speed-limit 10000 --connect-timeout 20 \
+            -o fonts.zip "$GAME_URL/shared-fonts.zip"
           ls -lh
           echo "${{ secrets.PROD_KEYS_B64 }}" | base64 -d > prod.keys
           mkdir shared-fonts && unzip -q fonts.zip -d shared-fonts
