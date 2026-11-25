@@ -1,0 +1,56 @@
+# 云端构建机的任务单（旷野之息 iOS 版专用）
+# 使用方法：整个文件内容复制到你 fork 的 GitHub 仓库
+# 路径必须是 .github/workflows/build-ios.yml
+name: build-botw-ios-ipa
+
+# 只有手动点按钮才会跑
+on:
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    # GitHub 免费的 Apple Silicon 云端 Mac，自带 Xcode 26
+    runs-on: macos-26
+    timeout-minutes: 300
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # 项目 docs/install.md 要求的全套构建依赖
+      - name: 安装构建依赖
+        run: |
+          brew install xcodegen cmake ninja python@3.14 opus libvpx uv
+
+      # 游戏文件从你家里电脑的临时隧道拉取（构建日我会给你地址）
+      # 密钥从 Secrets 解出，全程不进仓库
+      - name: 下载游戏文件和密钥
+        env:
+          GAME_URL: ${{ secrets.GAME_URL }}
+        run: |
+          set -e
+          curl -L --retry 8 --retry-delay 5 -C - -o botw.nsp "$GAME_URL/botw.nsp"
+          curl -L --retry 8 --retry-delay 5 -C - -o upd.nsp  "$GAME_URL/upd.nsp"
+          curl -L --retry 8 --retry-delay 5 -C - -o dlc1.nsp "$GAME_URL/dlc1.nsp"
+          curl -L --retry 8 --retry-delay 5 -C - -o dlc2.nsp "$GAME_URL/dlc2.nsp"
+          curl -L --retry 8 --retry-delay 5    -o fonts.zip  "$GAME_URL/shared-fonts.zip"
+          ls -lh
+          echo "${{ secrets.PROD_KEYS_B64 }}" | base64 -d > prod.keys
+          mkdir shared-fonts && unzip -q fonts.zip -d shared-fonts
+
+      # 项目构建脚本：本体 + 1.9.0 更新 + 双 DLC + 共享字体
+      # 产出未签名 IPA，游戏数据默认打包进去，装机即用
+      - name: 构建未签名 IPA
+        run: |
+          python3.14 build_app.py botw.nsp -k prod.keys \
+            --platform ios -o BOTW.ipa \
+            --update upd.nsp \
+            --dlc dlc1.nsp dlc2.nsp \
+            --shared-fonts ./shared-fonts
+
+      # IPA 挂为产物，保留 1 天，下载后即从 GitHub 消失
+      - name: 上传 IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: BOTW-ios-ipa
+          path: BOTW.ipa
+          retention-days: 1
